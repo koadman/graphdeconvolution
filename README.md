@@ -2,6 +2,7 @@
 A repository for work on deconvoluting assembly graphs containing strain mixtures using time-series abundance information.
 
 The code structure consists of two major parts:
+
 1. A hacked-up version of MEGAHIT which produces unitigs and associated depth of coverage information.
 2. A deconvolution algorithm (or many of these as we test out different approaches)
 
@@ -28,7 +29,7 @@ The hacked-up version of megahit uses the same command-line interface as standar
 cd megahit
 make
 cd ../test_data
-../megahit/megahit -1 `cat testr1A.csv` -2 `cat r2A.csv` -o asmtest
+../megahit/megahit -1 `cat r1A.csv` -2 `cat r2A.csv` -o asmtest
 
 # specify the number of genomes (factors) as 4 and the maximum depth of coverage
 echo "G<-4" > unitigs.Rdata
