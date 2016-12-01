@@ -97,6 +97,7 @@ int main_bin_unitigs(int argc, char **argv) {
         }
     }
 
+    // write out the graphs in FastG
     for(size_t g=0; g<genomes; g++){
         std::ostringstream g_fname;
         g_fname << (const char*)argv[4] << "." << g;
@@ -129,6 +130,57 @@ int main_bin_unitigs(int argc, char **argv) {
                 header += ";";
                 g_file << header << "\n" << s << "\n";
             }
+        }
+        g_file.close();
+    }
+
+    // write out the merged sequences
+    for(size_t g=0; g<genomes; g++){
+        std::ostringstream g_fname;
+        g_fname << (const char*)argv[4] << ".unitigs." << g;
+        ofstream g_file(g_fname.str().c_str());
+        vector<bool> used(ctgs.size());
+        for (int i = 0; i < (int)ctgs.size(); ++i) {
+            if(gprobs[g][i] < pprob_threshold) continue;
+            if(used[i]) continue;
+            used[i] = true;
+            string cur_seq = ctgs[i];
+            ostringstream header_fwd, header_rev;
+            header_fwd << i;
+            for (int dir = 0; dir < 2; ++dir) {
+                while(true){
+                    auto mit = start_kmer_to_id.find(cur_seq.substr(cur_seq.length() - k));
+
+                    if (mit == start_kmer_to_id.end()) break; // no outgoing edges
+                    vector<int> viable;
+                    for(size_t j = 0; j<mit->second.size(); j++){
+                        if(gprobs[g][abs(mit->second[j])-1] >= pprob_threshold){
+                            viable.push_back(mit->second[j]);
+                        }
+                    }
+
+                    vector<int> rev_viable;
+                    auto mit_rev = start_kmer_to_id.find(RevComp(cur_seq.substr(cur_seq.length() - k)));
+                    for(size_t j = 0; j<mit_rev->second.size(); j++){
+                        if(gprobs[g][abs(mit_rev->second[j])-1] >= pprob_threshold){
+                            rev_viable.push_back(mit_rev->second[j]);
+                        }
+                    }
+
+                    if (viable.size() != 1 || rev_viable.size() != 1) break; // need 1 outgoing edge to merge unitigs
+                    
+                    // extend the current sequence
+                    string next_seq = ctgs[abs(viable[0])-1];
+                    if(viable[0] < 0) next_seq = RevComp(next_seq);
+                    cur_seq += next_seq.substr(k);
+                    used[abs(viable[0])-1]=true;
+                    if(dir==0) header_fwd << "," << viable[0];
+                    if(dir==1) header_rev << viable[0] << ",";
+                }
+
+                cur_seq = RevComp(cur_seq);
+            }
+            g_file << ">" << header_rev.str() << header_fwd.str() << "\n" << cur_seq << "\n";
         }
         g_file.close();
     }
