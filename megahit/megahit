@@ -940,7 +940,7 @@ def assemble(cur_k):
         if cur_k == opt.k_max:
             assembly_cmd.append("--is_final_round")
             assembly_cmd.append("--factorize")
-            assembly_cmd.append(str(len(opt.pe1)))
+            assembly_cmd.append(str(max(len(opt.pe1),len(opt.pe12))))
 
         if opt.no_bubble:
             assembly_cmd.append("--no_bubble")
@@ -1087,8 +1087,9 @@ def main(argv = None):
         build_lib()
 
         all_libs = []
-        for l in range(len(opt.pe1)):
-            all_libs += [l]
+        if(len(opt.se)>0): all_libs = range(0,len(opt.se))
+        if(len(opt.pe1)>0): all_libs = range(0,len(opt.pe1))
+        if(len(opt.pe12)>0): all_libs = range(0,len(opt.pe12))
 
         build_first_graph(opt.k_min,-1)
 
