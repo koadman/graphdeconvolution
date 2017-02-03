@@ -12,14 +12,14 @@ data {
     int adj2dest1[adj2count];
     int adj2dest2[adj2count];
     real lengths[V];
+    real expected_length;
 }
 
 transformed data {
 	real <lower=0> cc[V,S]; // matrix of unitig depths at each site & timepoint
 
 	for(x in 1:V*S){
-        int v;
-        v = ((x-1)/S)+1;
+        int v = ((x-1)/S)+1;
         if(v <= V){
 		    cc[v,((x-1)%S)+1] = depths[x];
         }
@@ -45,7 +45,7 @@ model {
 		    geno[v][g] ~ beta(0.1,0.1); // prior concentrated on 0 & 1 (poor man's approximation to what should be binary variable)
         }
 	}
-    genome_size ~ normal(1400,100);
+    genome_size ~ normal(1400,50);
     p_deadend ~ beta(0.1,0.5);
 
 	// calculate log likelihood
@@ -61,8 +61,7 @@ model {
         for( b in 1:adj1count ) {
             real s1p = geno[abs(adj1source[b])][g];
             real d1p = geno[abs(adj1dest[b])][g];
-            real edge_prob = 0;
-            edge_prob = (p_deadend)*( s1p*(1-d1p) );
+            real edge_prob = (p_deadend)*( s1p*(1-d1p) );
             edge_prob = edge_prob + (1-p_deadend)*(s1p*d1p + (1-s1p)*(1-d1p) + (1-s1p)*d1p);
             target += log(edge_prob);
         }
@@ -72,11 +71,11 @@ model {
         for( b in 1:adj2count ) {
             real s1p = geno[abs(adj2source[b])][g];
             real d1p = geno[abs(adj2dest1[b])][g];
-            real d2p = geno[abs(adj2dest1[b])][g];
-            real edge_prob = 0;
-            edge_prob = (p_deadend)*( s1p*(1-d1p)*(1-d2p) );
+            real d2p = geno[abs(adj2dest2[b])][g];
+            real edge_prob = (p_deadend)*( s1p*(1-d1p)*(1-d2p) );
+            edge_prob = edge_prob + (p_deadend)*( s1p*d1p*d2p );
             edge_prob = edge_prob + (1-p_deadend)*(s1p*d1p*(1-d2p) + s1p*(1-d1p)*d2p + (1-s1p)*(1-d1p)*(1-d2p) + (1-s1p)*d1p*(1-d2p) + (1-s1p)*(1-d1p)*d2p + (1-s1p)*d1p*d2p);
-            target += log(edge_prob);
+            target +=  log(edge_prob);
         }
     }
 
@@ -86,7 +85,7 @@ model {
         for( v in 1:V ){
             glen = glen + geno[v][g]*lengths[v];
         }
-        target += normal_log(glen, 1400, 50);
+        target +=  normal_log(glen, expected_length, expected_length/30);
     }
 }
 
