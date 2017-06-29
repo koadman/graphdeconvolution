@@ -34,16 +34,20 @@ parameters {
     real<lower=0, upper=10000> genome_size;         // unknown average strain genome size
 	vector <lower=0,upper=maxdepth>[G] abund[S];    // strain relative abundance at each time point
     vector<lower=0,upper=1>[G] geno[V];             // presence or absence of each unitig in each strain
+    real<lower=0> relevance[G];     // relevance terms
 }
 
 model {
 	// set the priors
+    relevance ~ gamma(5,2);
 	for( s in 1:S ) {
-		abund[s] ~ lognormal(mu,sigma); // lognormally distributed strain abundances
+    	for( g in 1:G ) {
+    		abund[s][g] ~ normal(0.0,1.0/relevance[g]); // half-normal on strain abundance terms
+        }
 	}
 	for( v in 1:V ) {
     	for( g in 1:G ) {
-		    geno[v][g] ~ beta(0.1,0.1); // prior concentrated on 0 & 1 (poor man's approximation to what should be binary variable)
+		    geno[v][g] ~ beta(1.0/relevance[g],0.1); // prior concentrated on 0 & 1 (poor man's approximation to what should be binary variable)
         }
 	}
     genome_size ~ normal(3200,100);
