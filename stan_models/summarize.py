@@ -1,9 +1,15 @@
 #!/usr/bin/env python
 from __future__ import division
 import sys
+if len(sys.argv) != 5:
+    print "Usage: summarize.py <stan data> <stan posterior> <FastA output> <relevance threshold>"
+    sys.exit(-1)
 datafile = open(sys.argv[1])
 postfile = open(sys.argv[2])
 outfile = open(sys.argv[3], 'w')
+relevance_threshold = int(sys.argv[4])
+
+
 
 genomes = 0
 unitigs = 0
@@ -49,7 +55,7 @@ relevant=0
 for v in range(unitigs):
     sep = ""
     for g in range(genomes):
-        if relevance[g] > 1:
+        if relevance[g] > relevance_threshold:
             continue # skip genome if not relevant
         relevant+=1
         outfile.write(sep)
