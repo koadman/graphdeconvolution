@@ -1,6 +1,6 @@
 #!/usr/bin/env nextflow
 /**
- * Usage: gdecon.nf --readlist1=/path/to/pe_readfile_list.txt  --readlist2=/path/to/pe_readfile_list.txt 
+ * Usage: gdecon.nf --readlist1=/path/to/pe_readfile_list.txt  --readlist2=/path/to/pe_readfile_list.txt --r1suffix=.r1.fastq.gz
  * (c) 2017 Aaron Darling
  */
 
@@ -20,7 +20,8 @@ process clean {
 }
 */
 
-process dbg {
+// constructs the unitig graph
+process unitig {
     input:
     file('rlist1') from readlist1
     file('rlist2') from readlist2
@@ -39,7 +40,8 @@ rfiles1 = Channel.from(file(params.readlist1)).splitText() { it.trim() }
 rfiles2 = Channel.from(file(params.readlist2)).splitText() { it.trim() }
 rfiles = rfiles1.merge(rfiles2) {o, e -> [o, e]}.spread(unitigs)
 
-process cov {
+// estimates depth of coverage on unitigs
+process unitig_cov {
     input:
     set reads,reads2,file('unitigs') from rfiles
     output:
@@ -52,8 +54,8 @@ process cov {
     """
 }
 
+// collect coverage from each time point to a single file
 covfefe = covcounts.collect()
-
 process extract_cov {
     input:
     file('*') from covfefe
@@ -86,6 +88,7 @@ for i in range(ti):
 """
 }
 
+// run the Bayesian NMF in stan
 process stankmer_nmf {
     input:
     file('coverage.csv') from coverage
