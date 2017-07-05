@@ -90,6 +90,8 @@ for i in range(ti):
 
 // run the Bayesian NMF in stan
 process stankmer_nmf {
+    publishDir 'out', mode: 'copy', overwrite: true
+
     input:
     file('coverage.csv') from coverage
     file('unitigs.fa') from unitigs2
