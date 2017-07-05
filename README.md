@@ -1,14 +1,37 @@
 # assembly graph deconvolution
 A repository for work on deconvoluting assembly graphs containing strain mixtures using time-series abundance information.
 
-The code structure consists of two major parts:
+### Quick start
+Assuming you are starting in a directory containing a collection of paired-end Illumina read files, with names ending in the usual R?.fastq.gz, the software can be run as follows:
 
-1. A hacked-up version of MEGAHIT which produces unitigs and associated depth of coverage information.
-2. A deconvolution algorithm (or many of these as we test out different approaches)
+```
+export GDECONHOME=/path/to/this/repo
+find `pwd` -maxdepth 1 -name "*R1.fastq.gz" | sort > read1_files.txt
+find `pwd` -maxdepth 1 -name "*R2.fastq.gz" | sort > read2_files.txt
+$GDECONHOME/btools/gdecon.nf --readlist1=read1_files.txt  --readlist2=read2_files.txt --r1suffix=R1.fastq.gz
+```
 
-### The MEGAHIT hack
+If the workflow has completed successfully then the assembled strain genomes will appear in the directory `out/`.
 
-The hacked-up version of megahit uses the same command-line interface as standard megahit. Two additional output files are generated in addition to the usual megahit outputs. The first is `intermediate_contigs/k*.unitigs.fa`, which contains the unitig sequences. This can optionally be processed with the megahit toolkit contigs2fastg program to generate a graph viewable in BANDAGE. The second output is `intermediate_contigs/k*.unitig_depths.Rdata`. This file contains the following information about the unitig graph:
+
+### Dependencies and prerequisites
+
+- Linux, kernel 2.6.32 or later
+- nextflow, version 0.24 or later 
+- python 3
+- gfapy
+- several others
+
+### Major components of the workflow
+
+The workflow first constructs a compacted de Bruijn graph using [bcalm](https://github.com/GATB/bcalm), then trims the dBg using [btrim](https://github.com/Malfoy/BTRIM). The abundance of each path (unitig) in each sample is then estimated via [tigops](https://github.com/GATB/tigops/).
+Next, the abundance data and graph structure are given to a Bayesian graph deconvolution model.
+The posterior output from the model is summarised and the number of strain genomes as well as their sequences is then recorded.
+
+### Bayesian assembly graph deconvolution implemented in Stan
+
+A model has been implemented in Stan code to carry out assembly graph deconvolution.
+The input file for the model must contains the following information about the unitig graph:
 
 - **V**: the number of unitigs
 - **S**: the number of samples
@@ -23,27 +46,7 @@ The hacked-up version of megahit uses the same command-line interface as standar
 - **lengths**: the lengths of the V unitigs
 
 
-### Step-by-step instructions
+### The MEGAHIT hack
 
-```
-cd megahit
-make
-cd ../test_data
-../megahit/megahit -1 `cat r1A.csv` -2 `cat r2A.csv` -o asmtest
-
-# specify the number of genomes (factors) as 4 and the maximum depth of coverage
-echo "G<-4" > unitigs.Rdata
-echo "maxdepth<-200" >> unitigs.Rdata
-cat asmtest/intermediate_contigs/k99.unitig_depths.Rdata >> unitigs.Rdata
-
-# run the variational inference
-../stan_models/genotypes3_unitig_graph  variational output_samples=100 tol_rel_obj=0.001 iter=10000 data file=unitigs.Rdata output file=factor_16S.4.out diagnostic_file=factor_16S.4.diag
-
-# the following command summarizes the posterior probability of each unitig being in each of the (four) genomes
-../stan_models/summarize.py unitigs.Rdata factor_16S.4.out factor_16S.4.summary
-
-# the next command parses the unitig fasta and the posterior summary and creates one FastG file per genome with the base name 'fourbins'
-# it uses a posterior threshold of 0.5 for contig inclusion
-../megahit/megahit_toolkit binUnitigs 99 asmtest/intermediate_contigs/k99.unitigs.fa factor_16S.4.summary fourbins 0.5
-```
+We also created a hacked-up version of megahit, designed to take multiple samples. It uses the same command-line interface as standard megahit. Two additional output files are generated in addition to the usual megahit outputs. The first is `intermediate_contigs/k*.unitigs.fa`, which contains the unitig sequences. This can optionally be processed with the megahit toolkit contigs2fastg program to generate a graph viewable in BANDAGE. The second output is `intermediate_contigs/k*.unitig_depths.Rdata`. This file is as described above.
 
