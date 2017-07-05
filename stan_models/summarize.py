@@ -7,7 +7,7 @@ if len(sys.argv) != 5:
 datafile = open(sys.argv[1])
 postfile = open(sys.argv[2])
 outfile = open(sys.argv[3], 'w')
-relevance_threshold = int(sys.argv[4])
+relevance_threshold = float(sys.argv[4])
 
 
 
