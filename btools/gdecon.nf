@@ -9,10 +9,11 @@ readlist2 = Channel.from(file(params.readlist2))
 
 params.k = 51
 params.maxstrains = 25
-params.relevance_threshold = 0.05
+params.relevance_threshold = 0
 params.maxtiplen = 100
 params.asmcores = 8
 params.covk = 31
+params.output="out"
 
 /*
 process clean {
@@ -101,6 +102,7 @@ process convert_gfa {
     output:
     file('stan.kmer') into stankmer
     file('stan.kmer') into stankmer2
+    file('stan.kmer') into stankmer3
     file('unitigs.gfa') into gfa
 
 """
@@ -155,22 +157,70 @@ sbfile.write(max_r)
 }
 
 
-// summarize the best run
+// select the best run of variational inference
 runs = stankmerout.collect()
-process summarize {
-    publishDir 'out', mode: 'copy', overwrite: true
-
+process best_stankmer {
     input:
-    file('unitigs.gfa') from gfa
-    file('stan.kmer') from stankmer2
     file('stan.kmer.*.out') from runs
     file('stan.best') from bestrun
 
     output:
-    file('strain_seqs.fa')
-    """
-    ${GDECONHOME}/stan_models/summarize.py stan.kmer stan.kmer.`cat stan.best`.out stan.kmer.summary ${params.relevance_threshold}
-    ${GDECONHOME}/btools/consenseq.py unitigs.gfa stan.kmer.summary 0.51 strain_seqs.fa
+    file('stan.kmer.out') into beststankmer
+    file('stan.kmer.out') into beststankmer2
 
     """
+    cp stan.kmer.`cat stan.best`.out stan.kmer.out
+    """
 }
+
+// summarize the ARD weights
+process get_ard_weights {
+    publishDir params.output, mode: 'copy', overwrite: true
+
+    input:
+    file('stan.kmer') from stankmer2
+    file('stan.kmer.out') from beststankmer
+
+    output:
+    file('ard_weights.txt') into relweights
+
+    when:
+    params.relevance_threshold == 0
+
+    script:
+    """
+    ${GDECONHOME}/stan_models/summarize.py stan.kmer stan.kmer.out stan.kmer.summary 0 | sort > ard_weights.txt
+    """
+}
+
+relweights.subscribe { 
+    println("\nStrain count evaluation complete. Please inspect the file ${params.output}/ard_weights.txt and identify a numeric value that separates the weights into two natural groups.\nThen re-run gdecon.nf with the following command, specifying the chosen threshold with --relevance_threshold:\n")
+    println(workflow.commandLine + " --relevance_threshold=<number> ") 
+}
+
+// summarize the best run
+process summarize {
+    publishDir params.output, mode: 'copy', overwrite: true
+
+    input:
+    file('unitigs.gfa') from gfa
+    file('stan.kmer') from stankmer3
+    file('stan.kmer.out') from beststankmer2
+
+    output:
+    file('strain_seqs.fa') into strainseqs
+    
+    when:
+    params.relevance_threshold != 0
+
+    script:
+    """
+    ${GDECONHOME}/stan_models/summarize.py stan.kmer stan.kmer.out stan.kmer.summary ${params.relevance_threshold}
+    ${GDECONHOME}/btools/consenseq.py unitigs.gfa stan.kmer.summary 0.5 strain_seqs.fa
+    """
+}
+
+strainseqs.subscribe { 
+    println("\nWorkflow complete. Assembled strain sequences have been stored in ${params.output}/strain_seqs.fa")
+}
+
