@@ -4,9 +4,7 @@
  * (c) 2017 Aaron Darling
  */
 
-readlist1 = Channel.from(file(params.readlist1))
-readlist2 = Channel.from(file(params.readlist2))
-
+// these default settings can be overridden on the command-line
 params.k = 51
 params.maxstrains = 25
 params.relevance_threshold = 0
@@ -15,32 +13,35 @@ params.asmcores = 8
 params.covk = 31
 params.output="out"
 
-/*
+rfiles1c = Channel.from(file(params.readlist1)).splitText() { it.trim() }
+rfiles2c = Channel.from(file(params.readlist2)).splitText() { it.trim() }
+rfiles_cleaning = rfiles1c.merge(rfiles2c) {o, e -> [o, e]}
+
 process clean {
     input:
-    file(r) from rfiles1
+    set r1,r2 from rfiles_cleaning
     output:
-    file('*.clean.fq') into readlist
+    file('*.clean.fq') into cleanreads
 
     """
-    ${GDECONHOME}/external/bbmap/bbduk.sh in=${r} out=${r}.clean.fq ref=${GDECONHOME}/external/bbmap/resources/adapters.fa ktrim=r k=23 mink=11 hdist=1 qtrim=r trimq=10 tpe tbo
+    name=`basename ${r1} ${params.r1suffix}`
+    ${BBMAP}/bbduk.sh in=${r1} in2=${r2} out=\$name.clean.fq outs=\$name.single.fq ref=${BBMAP}/resources/adapters.fa ktrim=r k=23 mink=11 hdist=1 qtrim=r trimq=20 tpe tbo
     """
 }
-*/
 
 // constructs the unitig graph
+allclean = cleanreads.collect()
 process unitig {
     input:
-    file('rlist1') from readlist1
-    file('rlist2') from readlist2
+    file('*') from allclean
     output:
-    file('bothreads.unitigs.fa') into unitigs
-    file('bothreads.unitigs.fa') into unitigs2
+    file('rlist.unitigs.fa') into unitigs
+    file('rlist.unitigs.fa') into unitigs2
 
     """
-    cat rlist1 rlist2 >> bothreads.txt
-    ${GDECONHOME}/external/gatb/bcalm -in bothreads.txt -kmer-size ${params.k} -abundance-min 2 -nb-cores ${params.asmcores}
-    ${GDECONHOME}/external/gatb/btrim bothreads.unitigs.fa ${params.k} ${params.maxtiplen} ${params.asmcores}
+    ls -1 *.clean.fq > rlist
+    ${GDECONHOME}/external/gatb/bcalm -in rlist -kmer-size ${params.k} -abundance-min 2 -nb-cores ${params.asmcores}
+    ${GDECONHOME}/external/gatb/btrim rlist.unitigs.fa ${params.k} ${params.maxtiplen} ${params.asmcores}
     """
 }
 
