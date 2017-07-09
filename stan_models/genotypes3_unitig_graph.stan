@@ -12,7 +12,8 @@ data {
     int adj2dest1[adj2count];   // first dest node w/outdegree 2
     int adj2dest2[adj2count];   // second dest node w/outdegree 2
     real lengths[V];        // length in nucleotides of each node
-    real expected_length;   // expected length of paths
+    real<lower=0> genome_min;   // smallest genome size
+    real<lower=0> genome_max;   // largest genome size
 }
 
 transformed data {
@@ -31,7 +32,7 @@ parameters {
     real <lower=0,upper=100> mu;        // mu parameter for lognormal strain abundance
     real <lower=0> sigma;               // sigma for lognormal strain abundance
     real <lower=0,upper=1> p_deadend;   // probability that a dead-end exists: when a node with a single outgoing vertex exists but the destination vertex does not
-    real<lower=0, upper=10000> genome_size;         // unknown average strain genome size
+    real<lower=genome_min, upper=genome_max> genome_size;   // unknown average strain genome size
 	vector <lower=0,upper=maxdepth>[G] abund[S];    // strain relative abundance at each time point
     vector<lower=0,upper=1>[G] geno[V];             // presence or absence of each unitig in each strain
     real<lower=0> relevance[G];     // relevance terms
@@ -50,7 +51,6 @@ model {
 		    geno[v][g] ~ beta(1.0/relevance[g],0.1); // prior concentrated on 0 & 1 (poor man's approximation to what should be binary variable)
         }
 	}
-    genome_size ~ normal(3200,100);
     p_deadend ~ beta(0.1,0.5);
 
 	// calculate log likelihood

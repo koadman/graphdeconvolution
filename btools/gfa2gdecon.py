@@ -5,14 +5,16 @@ import sys
 depthsfile = open(sys.argv[2])
 gfa = gfapy.Gfa.from_file(sys.argv[1])
 strains = sys.argv[3]
-exp_length = sys.argv[4]
+min_g_size = sys.argv[4]
+max_g_size = sys.argv[5]
 
 klen = int(gfa.header.kk)
 
 # add basic info
 print("G<-"+strains)
 print("maxdepth<-200") # fixme
-print("expected_length<-"+exp_length)
+print("genome_min<-"+min_g_size)
+print("genome_max<-"+max_g_size)
 print("V<-"+str(len(gfa.segments)))
 samples = 0
 
