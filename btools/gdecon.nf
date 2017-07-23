@@ -55,14 +55,14 @@ rfiles = rfiles1.merge(rfiles2) {o, e -> [o, e]}.spread(unitigs)
 // estimates depth of coverage on unitigs
 process unitig_cov {
     input:
-    set reads,reads2,file('unitigs') from rfiles
+    set reads,reads2,file(unitigs) from rfiles
     output:
     file('*.counts') into covcounts
 
     """
     name=`basename $reads ${params.r1suffix}`
     cat $reads $reads2 > bothreads
-    ${GDECONHOME}/external/gatb/tigops coverage -out \$name.counts -kmer-size ${params.covk} -reads bothreads -tigs unitigs -name \$name
+    ${GDECONHOME}/external/gatb/tigops coverage -out \$name.counts -kmer-size ${params.covk} -reads bothreads -tigs $unitigs -name \$name
     """
 }
 
@@ -87,9 +87,10 @@ for filename in listing:
     for line in f:
         if line[0] != '>':
             continue
-        m=re.search('mean_(\\d*\\.*\\d*)_', line)
+        m=re.search('mean_([^_]+?)_', line)
+        if m == None: print "line " + line + " in " + filename + " contains unexpected formatting"
         if not ti in tigs: tigs[ti]=str(ti)
-        tigs[ti] += "," + m.group(1)
+        tigs[ti] += "," + str(float(m.group(1)))
         ti+=1
 for i in range(ti):
     covout.write(tigs[i]+"\\n")
