@@ -5,12 +5,14 @@
  */
 
 // these default settings can be overridden on the command-line
+params.mingsize=1000000
+params.maxgsize=6000000
 params.k = 51
 params.maxstrains = 25
 params.relevance_threshold = 0
 params.maxtiplen = 100
 params.asmcores = 8
-params.covk = 31
+params.covk = 51
 params.output="out"
 
 rfiles1c = Channel.from(file(params.readlist1)).splitText() { it.trim() }
@@ -25,7 +27,7 @@ process clean {
 
     """
     name=`basename ${r1} ${params.r1suffix}`
-    ${BBMAP}/bbduk.sh in=${r1} in2=${r2} out=\$name.clean.fq outs=\$name.single.fq ref=${BBMAP}/resources/adapters.fa ktrim=r k=23 mink=11 hdist=1 qtrim=r trimq=20 tpe tbo
+    ${BBMAP}/bbduk.sh -Xmx500m in=${r1} in2=${r2} out=\$name.clean.fq outs=\$name.single.fq ref=${BBMAP}/resources/adapters.fa ktrim=r k=23 mink=11 hdist=1 qtrim=r trimq=20 tpe tbo
     """
 }
 
@@ -35,13 +37,14 @@ process unitig {
     input:
     file('*') from allclean
     output:
-    file('rlist.unitigs.fa') into unitigs
-    file('rlist.unitigs.fa') into unitigs2
+    file('rlist.contigs.fa') into unitigs
+    file('rlist.contigs.fa') into unitigs2
 
     """
     ls -1 *.clean.fq > rlist
-    ${GDECONHOME}/external/gatb/bcalm -in rlist -kmer-size ${params.k} -abundance-min 2 -nb-cores ${params.asmcores}
-    ${GDECONHOME}/external/gatb/btrim rlist.unitigs.fa ${params.k} ${params.maxtiplen} ${params.asmcores}
+    ${GDECONHOME}/external/gatb/minia -in rlist -kmer-size 51 -tip-len-topo-kmult 3 -tip-len-rctc-kmult 3 -tip-rctc-cutoff 15 -bulge-len-kmult 3 -bulge-altpath-covmult 20 -bulge-altpath-kadd 1000 -bulge-len-kadd 52 -ec-rctc-cutoff 30 -ec-len-kmult 1.5
+# -in rlist -kmer-size 51 -tip-rctc-cutoff 10 -bulge-len-kmult 2 -bulge-altpath-covmult 50 -bulge-len-kadd 52 -ec-rctc-cutoff 30 -ec-len-kmult 2
+# -in rlist -kmer-size ${params.k} -tip-rctc-cutoff 10 -bulge-len-kmult 2 -bulge-altpath-covmult 10 -bulge-len-kadd 50
     """
 }
 
@@ -110,7 +113,7 @@ process convert_gfa {
     ${GDECONHOME}/external/gatb/convertToGFA.py unitigs.fa unitigs.gfa ${params.k}
     perl -p -i -e "s/\\s+k:i:/\\tkk:i:/g" unitigs.gfa
     perl -p -i -e "s/KM:f:/km:f:/g" unitigs.gfa
-    ${GDECONHOME}/btools/gfa2gdecon.py unitigs.gfa coverage.csv ${params.maxstrains} 1500 > stan.kmer
+    ${GDECONHOME}/btools/gfa2gdecon.py unitigs.gfa coverage.csv ${params.maxstrains} ${params.mingsize} ${params.maxgsize} > stan.kmer
 """
 }
 
@@ -140,7 +143,7 @@ process best_stankmer {
     """
 #!/usr/bin/env python
 import sys, glob, re
-max_d=1
+max_d=1.0
 max_r=-1
 for file in glob.glob('stan.kmer.*.diag'):
     diagfile=open(file)
@@ -149,8 +152,8 @@ for file in glob.glob('stan.kmer.*.diag'):
     for line in diagfile:
         if line[0] == '#': continue
         d=line.rstrip().split(",")
-        if d[2] > max_d or max_d == 1:
-            max_d = d[2]
+        if float(d[2]) > max_d or max_d == 1:
+            max_d = float(d[2])
             max_r = repid
 sbfile = open("stan.best","w")
 sbfile.write(max_r)
@@ -190,7 +193,7 @@ process get_ard_weights {
 
     script:
     """
-    ${GDECONHOME}/stan_models/summarize.py stan.kmer stan.kmer.out stan.kmer.summary 0 | sort > ard_weights.txt
+    ${GDECONHOME}/stan_models/summarize.py stan.kmer stan.kmer.out stan.kmer.summary 0 | sort -n > ard_weights.txt
     """
 }
 
