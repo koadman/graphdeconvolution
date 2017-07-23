@@ -5,6 +5,7 @@ A repository for work on deconvoluting assembly graphs containing strain mixture
 Assuming you are starting in a directory containing a collection of paired-end Illumina read files, with names ending in the usual R?.fastq.gz, the software can be run as follows:
 
 ```
+export BBMAP=/path/to/bbmap
 export GDECONHOME=/path/to/this/repo
 find `pwd` -maxdepth 1 -name "*R1.fastq.gz" | sort > read1_files.txt
 find `pwd` -maxdepth 1 -name "*R2.fastq.gz" | sort > read2_files.txt
