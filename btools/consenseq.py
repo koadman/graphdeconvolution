@@ -2,15 +2,21 @@
 import gfapy
 import sys
 
+print("Parsing GFA")
 gfa = gfapy.Gfa.from_file(sys.argv[1])
+print("Done parsing GFA")
 summary = open(sys.argv[2])
 posterior_threshold = float(sys.argv[3])
 klen = gfa.header.kk
 
+print("making segmap")
 segmap = dict()
-for seg in range(len(gfa.segments)):
-    segmap[int(gfa.segments[seg].name)]=seg
+segnames = gfa.segment_names
+for seg in range(len(segnames)):
+    segmap[int(segnames[seg])]=seg
+print("done making segmap")
 
+print("Parsing posterior summary")
 posts = list()
 visited = list()
 for line in summary:
@@ -22,9 +28,22 @@ for line in summary:
         posts[i].append(float(dd[i]))
         visited[i].append(0)
 
+print("Parsed "+str(len(visited))+" strain posteriors")
 
 strainseqs = ["" for s in range(len(posts))]
 strainpaths = ["" for s in range(len(posts))]
+segs = gfa.segments
+edgemap=dict()
+for e in gfa.edges:
+    fname = int(e.from_segment.name)
+    tname = int(e.to_segment.name)
+    if not fname in edgemap:
+        edgemap[fname]=[]
+    if not tname in edgemap:
+        edgemap[tname]=[]
+    edgemap[fname].append(e)
+    edgemap[tname].append(e)
+
 for s in range(len(posts)):
     pathcount = 0
     for n in range(len(posts[s])):
@@ -35,7 +54,7 @@ for s in range(len(posts)):
         # this node exists in the strain and has not yet been visited
         # start a graph traversal in both directions
         strainpath = "+"+str(n)
-        cur_seq = gfa.segments[segmap[n]].sequence.rstrip()
+        cur_seq = segs[segmap[n]].sequence.rstrip()
         cur_seg = n
         cur_orient = "+"
         visited[s][n] = 1
@@ -43,7 +62,9 @@ for s in range(len(posts)):
             while True:
                 # find possible successors of the current segment
                 successors = dict()
-                for e in gfa.edges:
+                if not cur_seg in edgemap:
+                    edgemap[cur_seg]=[]
+                for e in edgemap[cur_seg]:
                     if e.from_segment.name == str(cur_seg) and e.from_orient == cur_orient and posts[s][int(e.to_segment.name)] >= posterior_threshold:
                         successors[int(e.to_segment.name)] = e.to_orient
                     if e.to_segment.name == str(cur_seg) and e.to_orient != cur_orient and posts[s][int(e.from_segment.name)] >= posterior_threshold:
@@ -68,9 +89,9 @@ for s in range(len(posts)):
                     else:
                         strainpath = cur_orient + str(suc) + "," + strainpath
                     if(cur_orient == "+"):
-                        cur_seq += gfa.segments[segmap[suc]].sequence[klen-1:]
+                        cur_seq += segs[segmap[suc]].sequence[klen-1:]
                     else:
-                        cur_seq += gfapy.sequence.rc(gfa.segments[segmap[suc]].sequence)[klen-1:]
+                        cur_seq += gfapy.sequence.rc(segs[segmap[suc]].sequence)[klen-1:]
 
             # now try to extend in the other direction from the original node
             cur_seg = n
