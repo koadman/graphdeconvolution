@@ -7,14 +7,17 @@ gfa = gfapy.Gfa.from_file(sys.argv[1])
 print("Done parsing GFA")
 summary = open(sys.argv[2])
 posterior_threshold = float(sys.argv[3])
-klen = gfa.header.kk
+klen = 81
 
 print("making segmap")
-segmap = dict()
 segnames = gfa.segment_names
+namemap = {}
+invnamemap = {}
 for seg in range(len(segnames)):
-    segmap[int(segnames[seg])]=seg
-print("done making segmap")
+    namemap[segnames[seg]]=seg
+    invnamemap[seg]=segnames[seg]
+
+print("done making namemap")
 
 print("Parsing posterior summary")
 posts = list()
@@ -35,8 +38,8 @@ strainpaths = ["" for s in range(len(posts))]
 segs = gfa.segments
 edgemap=dict()
 for e in gfa.edges:
-    fname = int(e.from_segment.name)
-    tname = int(e.to_segment.name)
+    fname = e.from_segment.name
+    tname = e.to_segment.name
     if not fname in edgemap:
         edgemap[fname]=[]
     if not tname in edgemap:
@@ -54,8 +57,8 @@ for s in range(len(posts)):
         # this node exists in the strain and has not yet been visited
         # start a graph traversal in both directions
         strainpath = "+"+str(n)
-        cur_seq = segs[segmap[n]].sequence.rstrip()
-        cur_seg = n
+        cur_seq = segs[n].sequence.rstrip()
+        cur_seg = invnamemap[n]
         cur_orient = "+"
         visited[s][n] = 1
         for i in range(2):
@@ -65,36 +68,36 @@ for s in range(len(posts)):
                 if not cur_seg in edgemap:
                     edgemap[cur_seg]=[]
                 for e in edgemap[cur_seg]:
-                    if e.from_segment.name == str(cur_seg) and e.from_orient == cur_orient and posts[s][int(e.to_segment.name)] >= posterior_threshold:
-                        successors[int(e.to_segment.name)] = e.to_orient
-                    if e.to_segment.name == str(cur_seg) and e.to_orient != cur_orient and posts[s][int(e.from_segment.name)] >= posterior_threshold:
-                        successors[int(e.from_segment.name)] = "-" if e.from_orient == "+" else "+"
+                    if e.from_segment.name == cur_seg and e.from_orient == cur_orient and posts[s][namemap[e.to_segment.name]] >= posterior_threshold:
+                        successors[e.to_segment.name] = e.to_orient
+                    if e.to_segment.name == cur_seg and e.to_orient != cur_orient and posts[s][namemap[e.from_segment.name]] >= posterior_threshold:
+                        successors[e.from_segment.name] = "-" if e.from_orient == "+" else "+"
 
                 if len(successors) > 1:
-                    print("ambiguous successor for node " + str(cur_seg) + " strain " + str(s))
+                    print("ambiguous successor for node " + cur_seg + " strain " + str(s))
                 ambig = False
                 for suc in successors:
-                    if visited[s][suc] == 1:
+                    if visited[s][namemap[suc]] == 1:
                         ambig = True    # if the node was already visited, and the path was not extended, then it was likely ambiguous (or a repeat?)
                 if len(successors) != 1 or ambig:
                     break   ## the successor node is either ambiguous or nonexistent
                 for suc in successors:
-                    if visited[s][suc] == 1:
-                        print("Error already visited node " + str(suc) + " in strain " + str(s))
+                    if visited[s][namemap[suc]] == 1:
+                        print("Error already visited node " + suc + " in strain " + str(s))
                     cur_orient = successors[suc]
                     cur_seg = suc
-                    visited[s][suc] = 1
+                    visited[s][namemap[suc]] = 1
                     if i == 0:
-                        strainpath += "," + cur_orient + str(suc)
+                        strainpath += "," + cur_orient + suc
                     else:
-                        strainpath = cur_orient + str(suc) + "," + strainpath
+                        strainpath = cur_orient + suc + "," + strainpath
                     if(cur_orient == "+"):
-                        cur_seq += segs[segmap[suc]].sequence[klen-1:]
+                        cur_seq += segs[namemap[suc]].sequence[klen-1:]
                     else:
-                        cur_seq += gfapy.sequence.rc(segs[segmap[suc]].sequence)[klen-1:]
+                        cur_seq += gfapy.sequence.rc(segs[namemap[suc]].sequence)[klen-1:]
 
             # now try to extend in the other direction from the original node
-            cur_seg = n
+            cur_seg = invnamemap[n]
             cur_orient = "-"
             cur_seq = gfapy.sequence.rc(cur_seq)
 
@@ -102,9 +105,12 @@ for s in range(len(posts)):
         strainpaths[s] += ">strain_" + str(s) + "_path_" + str(pathcount) + "\n" + strainpath + "\n"
         pathcount += 1
 
-outseqs = open(sys.argv[4],"w")
+i=0
 for s in strainseqs:
+    outseqs = open(sys.argv[4] + ".strain_"+str(i)+".fasta","w")
     outseqs.write(s)
+    outseqs.close()
+    i+=1
 
 for s in strainpaths:
     print(s.rstrip())
