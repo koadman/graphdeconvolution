@@ -33,9 +33,9 @@ for line in json_file:
         for mapping in gam["path"]["mapping"]:
             if "position" in mapping:
                 node_id = mapping["position"]["node_id"]
-                if not node_id in seq_id_bins: seq_id_bins[node_id]={}
-                seq_id_bins[node_id][bin_id]=1
-            print("NO 'position' attribute!!!", file=sys.stderr)
+                if not node_id in seq_id_bins: seq_id_bins[node_id]=set()
+                seq_id_bins[node_id].add(bin_id)
+            print("Sequence appears to be unaligned", file=sys.stderr)
     else:
         print("Entry for %s sequence had no 'path' attribute" % name, file=sys.stderr)
 
