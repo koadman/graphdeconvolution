@@ -2,6 +2,10 @@
 import json
 import sys
 
+if len(sys.argv) < 3:
+    print("Usage: %s <split_graph.json> <mapping.json>" % sys.argv[0])
+    exit(1)
+
 # set up a reverse complement table
 fwd_chars = "ACGTacgt"
 rev_chars = "TGCAtgca"
