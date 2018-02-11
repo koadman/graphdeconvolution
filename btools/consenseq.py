@@ -7,7 +7,7 @@ gfa = gfapy.Gfa.from_file(sys.argv[1])
 print("Done parsing GFA")
 summary = open(sys.argv[2])
 posterior_threshold = float(sys.argv[3])
-klen = 81
+klen = int(gfa.header.kk)
 
 print("making segmap")
 segnames = gfa.segment_names
@@ -22,14 +22,15 @@ print("done making namemap")
 print("Parsing posterior summary")
 posts = list()
 visited = list()
+next(summary)
 for line in summary:
     dd = line.rstrip().split()
-    for i in range(len(dd)):
+    for i in range(1,len(dd)):
         if len(posts) == 0:
-            posts = [[] for j in range(len(dd))]
-            visited = [[] for j in range(len(dd))]
-        posts[i].append(float(dd[i]))
-        visited[i].append(0)
+            posts = [[] for j in range(1,len(dd))]
+            visited = [[] for j in range(1,len(dd))]
+        posts[i-1].append(float(dd[i]))
+        visited[i-1].append(0)
 
 print("Parsed "+str(len(visited))+" strain posteriors")
 

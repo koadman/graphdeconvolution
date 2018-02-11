@@ -1,105 +1,109 @@
 #!/usr/bin/env python3
 import gfapy
 import sys
+import pystan
+import pickle
+import numpy as np
+import os
 
-depthsfile = open(sys.argv[2])
+stan_source="genotypes3_unitig_graph.stan"
+
 gfa = gfapy.Gfa.from_file(sys.argv[1])
+depthsfile = sys.argv[2]
 strains = sys.argv[3]
 min_g_size = sys.argv[4]
 max_g_size = sys.argv[5]
+repid = sys.argv[6]
+do_compile=False
+
+sample_path = 'stan.'+repid+'.out'
+diag_path = 'stan.'+repid+'.diag'
 
 klen = int(gfa.header.kk)
 
-# add basic info
-print("G<-"+strains)
-print("maxdepth<-200") # fixme
-print("genome_min<-"+min_g_size)
-print("genome_max<-"+max_g_size)
-print("V<-"+str(len(gfa.segments)))
-samples = 0
+data={}
 
-# write out the depths as given in Chris' file
-# todo: need to work out some standard way of obtaining these from tigops
-depthstr = "depths<-c("
-sepc = ""
-for line in depthsfile:
-    dd = line.rstrip().split(",")
-    if samples == 0:
-        samples = len(dd)-1
-    for d in dd[1:]:
-        depthstr += sepc + d
-        sepc = ","
-depthstr += ")"
-print("S<-"+str(samples))
-print(depthstr)
+# add basic info to data{}
+data['G']=int(strains)
+data['p_deadend']=0.0000001
+data['p_fork']=0.00001
+data['genome_min']=int(min_g_size)
+data['genome_max']=int(max_g_size)
+data['V']=len(gfa.segments)
 
-# write out unitig lengths
-lens = "lengths<-c("
-lensep = ""
+dlabels = np.genfromtxt(depthsfile, delimiter=',', usecols=0, dtype=str)
+ddata = np.genfromtxt(depthsfile, delimiter=',')[:,1:]
+depthdat = {label: row for label, row in zip(dlabels, ddata)}
+data['depths']=ddata
+data['S']=ddata.shape[1]
+
+# unitig lengths
+lenlist = []
 for seg in gfa.segments:
-    lens += lensep + str(len(seg.sequence)-klen)
-    lensep = ","
-print(lens + ")")
+    lenlist.append(len(seg.sequence)-klen)
+data['lengths']=lenlist
 
 # parse and write out unitig adjacency structure
 fromfirst = dict()
 fromsecond = dict()
 for edge in gfa.edges:
-    fo = ""
-    rfo = "-"
+    fo = 1
+    rfo = -1
     if edge.from_orient == "-":
-        fo = "-"
-        rfo = ""
-    to = ""
-    rto = "-"
+        fo = -1
+        rfo = 1
+    to = 1
+    rto = -1
     if edge.from_orient == "-":
-        to = "-"
-        rto = ""
+        to = -1
+        rto = 1
 
     # assume integer unitig IDs indexed from 0 -- and convert these to 1-based
-    fname = fo+str(int(edge.from_segment.name)+1)
-    tname = to+str(int(edge.to_segment.name)+1)
+    fname = fo*(int(edge.from_segment.name)+1)
+    tname = to*(int(edge.to_segment.name)+1)
     if fname not in fromfirst:
         fromfirst[fname] = tname
     else:
         fromsecond[fname] = tname
-    rfname = rfo+str(int(edge.from_segment.name)+1)
-    rtname = rto+str(int(edge.to_segment.name)+1)
+    rfname = rfo*(int(edge.from_segment.name)+1)
+    rtname = rto*(int(edge.to_segment.name)+1)
     if rtname not in fromfirst:
         fromfirst[rtname] = rfname
     else:
         fromsecond[rtname] = rfname
 
 
-unifrom = str(len(fromfirst)-len(fromsecond))
+data['adj1count']=len(fromfirst)-len(fromsecond)
+data['adj2count']=len(fromsecond)
 
-print("adj1count<-"+unifrom)
-print("adj2count<-"+str(len(fromsecond)))
-
-unifromstr = "adj1source<-c("
-unitostr = "adj1dest<-c("
-unisep = ""
-twofromstr = "adj2source<-c("
-twotostr1 = "adj2dest1<-c("
-twotostr2 = "adj2dest2<-c("
-twosep = ""
+data['adj2source']=[]
+data['adj2dest1']=[]
+data['adj2dest2']=[]
+data['adj1source']=[]
+data['adj1dest']=[]
 
 for seg in fromfirst:
     if seg in fromsecond:
-        twofromstr += twosep + seg
-        twotostr1 += twosep + fromfirst[seg]
-        twotostr2 += twosep + fromsecond[seg]
-        twosep = ","
+        data['adj2source'].append(seg)
+        data['adj2dest1'].append(fromfirst[seg])
+        data['adj2dest2'].append(fromsecond[seg])
     else:
-        unifromstr += unisep + seg
-        unitostr += unisep + fromfirst[seg]
-        unisep = ","
+        data['adj1source'].append(seg)
+        data['adj1dest'].append(fromfirst[seg])
 
-print(unifromstr+")")
-print(unitostr+")")
-print(twofromstr+")")
-print(twotostr1+")")
-print(twotostr2+")")
 
-#print(line.KC)
+# Path to the compiled stan binary
+my_path = os.path.split(os.path.realpath(__file__))[0]
+binary = os.path.join(my_path, '..', 'stan_models', stan_source + '.pkl')
+source_md5 = os.path.join(my_path, '..', 'stan_models', stan_source + '.md5')
+source_file  = os.path.join(my_path, '..', 'stan_models', stan_source)
 
+# Compile a stan binary if it does not exist or compile option is set
+if do_compile or not os.path.isfile(binary):
+    sm = pystan.StanModel(file=source_file)
+    with open(binary, 'wb') as f:
+        pickle.dump(sm, f)
+else:
+    sm = pickle.load(open(binary, 'rb'))
+
+fit = sm.vb(data=data, tol_rel_obj=0.008, sample_file=sample_path, diagnostic_file=diag_path, algorithm="meanfield")

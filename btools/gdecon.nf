@@ -5,8 +5,8 @@
  */
 
 // these default settings can be overridden on the command-line
-params.mingsize=1000000
-params.maxgsize=6000000
+params.mingsize=100000
+params.maxgsize=600000
 params.k = 51
 params.maxstrains = 25
 params.relevance_threshold = 0
@@ -42,7 +42,8 @@ process unitig {
 
     """
     ls -1 *.clean.fq > rlist
-    ${GDECONHOME}/external/gatb/minia -in rlist -kmer-size 51 -tip-len-topo-kmult 3 -tip-len-rctc-kmult 3 -tip-rctc-cutoff 15 -bulge-len-kmult 3 -bulge-altpath-covmult 20 -bulge-altpath-kadd 1000 -bulge-len-kadd 52 -ec-rctc-cutoff 30 -ec-len-kmult 1.5
+    ${GDECONHOME}/external/gatb/minia -in rlist -kmer-size 51 -no-bulge-removal -ec-rctc-cutoff 40 -tip-rctc-cutoff 10 -abundance-min 3 -abundance-min-threshold 3
+#    -tip-len-topo-kmult 3 -tip-len-rctc-kmult 3 -tip-rctc-cutoff 15 -bulge-len-kmult 3 -bulge-altpath-covmult 20 -bulge-altpath-kadd 1000 -bulge-len-kadd 52 -ec-rctc-cutoff 30 -ec-len-kmult 1.5
 # -in rlist -kmer-size 51 -tip-rctc-cutoff 10 -bulge-len-kmult 2 -bulge-altpath-covmult 50 -bulge-len-kadd 52 -ec-rctc-cutoff 30 -ec-len-kmult 2
 # -in rlist -kmer-size ${params.k} -tip-rctc-cutoff 10 -bulge-len-kmult 2 -bulge-altpath-covmult 10 -bulge-len-kadd 50
     """
@@ -101,34 +102,31 @@ for i in range(ti):
 // convert the bcalm unitigs to GFA format
 process convert_gfa {
     input:
-    file('coverage.csv') from coverage
     file('unitigs.fa') from unitigs2
 
     output:
-    file('stan.kmer') into stankmer
-    file('stan.kmer') into stankmer2
-    file('stan.kmer') into stankmer3
     file('unitigs.gfa') into gfa
+    file('unitigs.gfa') into gfa2
 
 """
     ${GDECONHOME}/external/gatb/convertToGFA.py unitigs.fa unitigs.gfa ${params.k}
     perl -p -i -e "s/\\s+k:i:/\\tkk:i:/g" unitigs.gfa
-    perl -p -i -e "s/KM:f:/km:f:/g" unitigs.gfa
-    ${GDECONHOME}/btools/gfa2gdecon.py unitigs.gfa coverage.csv ${params.maxstrains} ${params.mingsize} ${params.maxgsize} > stan.kmer
+#    perl -p -i -e "s/KM:f:/km:f:/g" unitigs.gfa
 """
 }
 
 // run the Bayesian NMF in stan
 process stankmer_nmf {
     input:
-    file('stan.kmer') from stankmer
     each repid from 1,2,3,4
+    file('unitigs.gfa') from gfa
+    file('coverage.csv') from coverage
     output:
-    file("stan.kmer.*.diag") into stankmerdiag
-    file("stan.kmer.*.out") into stankmerout
+    file("stan.*.diag") into stankmerdiag
+    file("stan.*.out") into stankmerout
 
     """
-    ${GDECONHOME}/stan_models/genotypes3_unitig_graph variational output_samples=100 tol_rel_obj=0.008 iter=10000 data file=stan.kmer output file=stan.kmer.${repid}.out diagnostic_file=stan.kmer.${repid}.diag
+    ${GDECONHOME}/btools/gfa2gdecon.py unitigs.gfa coverage.csv ${params.maxstrains} ${params.mingsize} ${params.maxgsize} ${repid}
     """
 }
 
@@ -140,15 +138,15 @@ process best_stankmer {
     file('*') from diags
     output:
     file('stan.best') into bestrun
-    
+
     """
 #!/usr/bin/env python
 import sys, glob, re
 max_d=1.0
 max_r=-1
-for file in glob.glob('stan.kmer.*.diag'):
+for file in glob.glob('stan.*.out.diag'):
     diagfile=open(file)
-    m = re.search("kmer.(\\d+).diag",file)
+    m = re.search("(\\d+).out.diag",file)
     repid = m.group(1)
     for line in diagfile:
         if line[0] == '#': continue
@@ -166,7 +164,7 @@ sbfile.write(max_r)
 runs = stankmerout.collect()
 process best_stankmer {
     input:
-    file('stan.kmer.*.out') from runs
+    file('stan.*.out') from runs
     file('stan.best') from bestrun
 
     output:
@@ -174,7 +172,7 @@ process best_stankmer {
     file('stan.kmer.out') into beststankmer2
 
     """
-    cp stan.kmer.`cat stan.best`.out stan.kmer.out
+    cp stan.`cat stan.best`.out stan.kmer.out
     """
 }
 
@@ -183,7 +181,7 @@ process get_ard_weights {
     publishDir params.output, mode: 'copy', overwrite: true
 
     input:
-    file('stan.kmer') from stankmer2
+    file('unitigs.gfa') from gfa
     file('stan.kmer.out') from beststankmer
 
     output:
@@ -194,13 +192,13 @@ process get_ard_weights {
 
     script:
     """
-    ${GDECONHOME}/stan_models/summarize.py stan.kmer stan.kmer.out stan.kmer.summary 0 | sort -n > ard_weights.txt
+     ${GDECONHOME}/stan_models/summarize.py unitigs.gfa stan.kmer.out stan.kmer.summary ${params.maxstrains} 0 | sort -n > ard_weights.txt
     """
 }
 
-relweights.subscribe { 
+relweights.subscribe {
     println("\nStrain count evaluation complete. Please inspect the file ${params.output}/ard_weights.txt and identify a numeric value that separates the weights into two natural groups.\nThen re-run gdecon.nf with the following command, specifying the chosen threshold with --relevance_threshold:\n")
-    println(workflow.commandLine + " --relevance_threshold=<number> ") 
+    println(workflow.commandLine + " --relevance_threshold=<number> ")
 }
 
 // summarize the best run
@@ -208,24 +206,22 @@ process summarize {
     publishDir params.output, mode: 'copy', overwrite: true
 
     input:
-    file('unitigs.gfa') from gfa
-    file('stan.kmer') from stankmer3
+    file('unitigs.gfa') from gfa2
     file('stan.kmer.out') from beststankmer2
 
     output:
     file('strain_seqs.fa') into strainseqs
-    
+
     when:
     params.relevance_threshold != 0
 
     script:
     """
-    ${GDECONHOME}/stan_models/summarize.py stan.kmer stan.kmer.out stan.kmer.summary ${params.relevance_threshold}
+    ${GDECONHOME}/stan_models/summarize.py unitigs.gfa stan.kmer.out stan.kmer.summary ${params.maxstrains} ${params.relevance_threshold}
     ${GDECONHOME}/btools/consenseq.py unitigs.gfa stan.kmer.summary 0.5 strain_seqs.fa
     """
 }
 
-strainseqs.subscribe { 
+strainseqs.subscribe {
     println("\nWorkflow complete. Assembled strain sequences have been stored in ${params.output}/strain_seqs.fa")
 }
-
