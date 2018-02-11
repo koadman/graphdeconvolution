@@ -6,6 +6,7 @@ from gfapy.sequence import rc
 
 gfa = gfapy.Gfa.from_file(sys.argv[1])
 klen = int(sys.argv[3])
+print_missing=False
 
 refmers={}
 graphmers={}
@@ -13,9 +14,9 @@ graphmers={}
 ref_kcount=0
 for biorefseq in SeqIO.parse(sys.argv[2], 'fasta'):
     refseq = biorefseq.seq
-    for i in range(len(refseq)):
-        refmers[refseq[i:i+klen]]=1
-        refmers[rc(refseq[i:i+klen])]=1
+    for i in range(len(refseq)-(klen-1)):
+        refmers[refseq[i:i+klen]]=i
+        refmers[rc(refseq[i:i+klen])]=-i
         ref_kcount+=1
 
 print("Parsed "+str(ref_kcount)+" ref kmers, of which "+str(int(len(refmers)/2))+" are unique")
@@ -41,6 +42,8 @@ for kmer in refmers:
         graphmers[kmer]=2 # mark as found
     else:
         fn+=1
+        if print_missing and refmers[kmer]>0:
+            print("Missing "+kmer+"\t"+str(refmers[kmer]))
 fp=0
 for kmer in graphmers:
     if graphmers[kmer]==1:
