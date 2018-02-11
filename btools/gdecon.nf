@@ -87,7 +87,7 @@ for filename in listing:
     for line in f:
         if line[0] != '>':
             continue
-        m=re.search('mean_([^_]+?)_', line)
+        m=re.search('_cov_([^_]+?)_', line)
         if m == None: print "line " + line + " in " + filename + " contains unexpected formatting"
         if not ti in tigs: tigs[ti]=str(ti)
         tigs[ti] += "," + str(float(m.group(1)))
