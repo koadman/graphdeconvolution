@@ -22,13 +22,16 @@ print("Parsed "+str(ref_kcount)+" ref kmers, of which "+str(int(len(refmers)/2))
 
 
 gfa_kcount=0
+gfa_seglen=0
 for seg in gfa.segments:
-    for i in range(len(seg.sequence)):
+    gfa_seglen += len(seg.sequence)-(klen-1)
+    for i in range((len(seg.sequence)-(klen-1))):
         graphmers[seg.sequence[i:i+klen]]=1
         graphmers[rc(seg.sequence[i:i+klen])]=1
         gfa_kcount+=1
 print("Parsed "+str(gfa_kcount)+" gfa kmers, of which "+str(int(len(graphmers)/2))+" are unique")
-
+#gfa_seglen -= (klen-1)*(len(gfa.edges)/2)
+print(str(gfa_seglen)+" kmers based on gfa length minus overlaps")
 
 fn=0
 tp=0
