@@ -33,9 +33,12 @@ data['V']=len(gfa.segments)
 
 dlabels = np.genfromtxt(depthsfile, delimiter=',', usecols=0, dtype=str)
 ddata = np.genfromtxt(depthsfile, delimiter=',')[:,1:]
-depthdat = {label: row for label, row in zip(dlabels, ddata)}
 data['depths']=ddata
 data['S']=ddata.shape[1]
+
+segmap={}
+for i in range(len(dlabels)):
+    segmap[dlabels[i]]=i+1
 
 # unitig lengths
 lenlist = []
@@ -59,14 +62,14 @@ for edge in gfa.edges:
         rto = 1
 
     # assume integer unitig IDs indexed from 0 -- and convert these to 1-based
-    fname = fo*(int(edge.from_segment.name)+1)
-    tname = to*(int(edge.to_segment.name)+1)
+    fname = fo*segmap[edge.from_segment.name]
+    tname = to*segmap[edge.to_segment.name]
     if fname not in fromfirst:
         fromfirst[fname] = tname
     else:
         fromsecond[fname] = tname
-    rfname = rfo*(int(edge.from_segment.name)+1)
-    rtname = rto*(int(edge.to_segment.name)+1)
+    rfname = rfo*segmap[edge.from_segment.name]
+    rtname = rto*segmap[edge.to_segment.name]
     if rtname not in fromfirst:
         fromfirst[rtname] = rfname
     else:

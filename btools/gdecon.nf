@@ -12,7 +12,7 @@ params.maxstrains = 25
 params.relevance_threshold = 0
 params.maxtiplen = 100
 params.asmcores = 8
-params.covk = 51
+params.covk = params.k
 params.output="out"
 
 rfiles1c = Channel.from(file(params.readlist1)).splitText() { it.trim() }
@@ -42,7 +42,7 @@ process unitig {
 
     """
     ls -1 *.clean.fq > rlist
-    ${GDECONHOME}/external/gatb/minia -in rlist -kmer-size 51 -no-bulge-removal -ec-rctc-cutoff 40 -tip-rctc-cutoff 10 -abundance-min 3 -abundance-min-threshold 3
+    ${GDECONHOME}/external/gatb/minia -in rlist -kmer-size ${params.k} -no-bulge-removal -ec-rctc-cutoff 40 -tip-rctc-cutoff 10 -abundance-min 3 -abundance-min-threshold 3
 #    -tip-len-topo-kmult 3 -tip-len-rctc-kmult 3 -tip-rctc-cutoff 15 -bulge-len-kmult 3 -bulge-altpath-covmult 20 -bulge-altpath-kadd 1000 -bulge-len-kadd 52 -ec-rctc-cutoff 30 -ec-len-kmult 1.5
 # -in rlist -kmer-size 51 -tip-rctc-cutoff 10 -bulge-len-kmult 2 -bulge-altpath-covmult 50 -bulge-len-kadd 52 -ec-rctc-cutoff 30 -ec-len-kmult 2
 # -in rlist -kmer-size ${params.k} -tip-rctc-cutoff 10 -bulge-len-kmult 2 -bulge-altpath-covmult 10 -bulge-len-kadd 50
@@ -74,6 +74,7 @@ process extract_cov {
     file('*') from covfefe
     output:
     file('coverage.csv') into coverage
+    file('coverage.csv') into coverage2
 
 """
 #!/usr/bin/env python
@@ -83,18 +84,18 @@ listing = glob.glob('*.counts')
 covout = open('coverage.csv', 'w')
 tigs = {}
 for filename in listing:
-    ti = 0
     f = open(filename)
     for line in f:
         if line[0] != '>':
             continue
         m=re.search('_cov_([^_]+?)_', line)
         if m == None: print "line " + line + " in " + filename + " contains unexpected formatting"
-        if not ti in tigs: tigs[ti]=str(ti)
+        ti = line.split()[0][1:]
+        if not ti in tigs:
+          tigs[ti]=ti
         tigs[ti] += "," + str(float(m.group(1)))
-        ti+=1
-for i in range(ti):
-    covout.write(tigs[i]+"\\n")
+for ti in tigs:
+    covout.write(tigs[ti]+"\\n")
 
 """
 }
@@ -111,7 +112,6 @@ process convert_gfa {
 """
     ${GDECONHOME}/external/gatb/convertToGFA.py unitigs.fa unitigs.gfa ${params.k}
     perl -p -i -e "s/\\s+k:i:/\\tkk:i:/g" unitigs.gfa
-#    perl -p -i -e "s/KM:f:/km:f:/g" unitigs.gfa
 """
 }
 
@@ -144,9 +144,9 @@ process best_stankmer {
 import sys, glob, re
 max_d=1.0
 max_r=-1
-for file in glob.glob('stan.*.out.diag'):
+for file in glob.glob('stan.*.diag'):
     diagfile=open(file)
-    m = re.search("(\\d+).out.diag",file)
+    m = re.search("(\\d+).diag",file)
     repid = m.group(1)
     for line in diagfile:
         if line[0] == '#': continue
@@ -208,9 +208,10 @@ process summarize {
     input:
     file('unitigs.gfa') from gfa2
     file('stan.kmer.out') from beststankmer2
+    file('coverage.csv') from coverage2
 
     output:
-    file('strain_seqs.fa') into strainseqs
+    file('assembled.*') into strainseqs
 
     when:
     params.relevance_threshold != 0
@@ -218,10 +219,10 @@ process summarize {
     script:
     """
     ${GDECONHOME}/stan_models/summarize.py unitigs.gfa stan.kmer.out stan.kmer.summary ${params.maxstrains} ${params.relevance_threshold}
-    ${GDECONHOME}/btools/consenseq.py unitigs.gfa stan.kmer.summary 0.5 strain_seqs.fa
+    ${GDECONHOME}/btools/consenseq.py unitigs.gfa coverage.csv stan.kmer.summary 0.5 assembled
     """
 }
 
 strainseqs.subscribe {
-    println("\nWorkflow complete. Assembled strain sequences have been stored in ${params.output}/strain_seqs.fa")
+    println("\nWorkflow complete. Assembled strain sequences have been stored in ${params.output}/assembled.*.fasta")
 }

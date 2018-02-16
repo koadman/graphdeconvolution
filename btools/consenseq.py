@@ -1,42 +1,33 @@
 #!/usr/bin/env python3
 import gfapy
 import sys
+import numpy as np
 
-print("Parsing GFA")
 gfa = gfapy.Gfa.from_file(sys.argv[1])
-print("Done parsing GFA")
-summary = open(sys.argv[2])
-posterior_threshold = float(sys.argv[3])
+covfile = sys.argv[2]
+summaryfile = sys.argv[3]
+posterior_threshold = float(sys.argv[4])
 klen = int(gfa.header.kk)
 
-print("making segmap")
-segnames = gfa.segment_names
-namemap = {}
-invnamemap = {}
-for seg in range(len(segnames)):
-    namemap[segnames[seg]]=seg
-    invnamemap[seg]=segnames[seg]
-
-print("done making namemap")
+segmap={}
+invmap={}
+dlabels = np.genfromtxt(covfile, delimiter=',', usecols=0, dtype=str)
+for i in range(len(dlabels)):
+    segmap[dlabels[i]]=i
+    invmap[i]=dlabels[i]
 
 print("Parsing posterior summary")
-posts = list()
-visited = list()
-next(summary)
-for line in summary:
-    dd = line.rstrip().split()
-    for i in range(1,len(dd)):
-        if len(posts) == 0:
-            posts = [[] for j in range(1,len(dd))]
-            visited = [[] for j in range(1,len(dd))]
-        posts[i-1].append(float(dd[i]))
-        visited[i-1].append(0)
+posts = np.genfromtxt(summaryfile, delimiter=',', skip_header=1)[:,1:]
+visited = np.zeros(posts.shape)
+print("Parsed "+str(visited.shape[1])+" strain posteriors")
 
-print("Parsed "+str(len(visited))+" strain posteriors")
-
-strainseqs = ["" for s in range(len(posts))]
-strainpaths = ["" for s in range(len(posts))]
+strainseqs = ["" for s in range(posts.shape[1])]
+strainpaths = ["" for s in range(posts.shape[1])]
 segs = gfa.segments
+seqmap={}
+for seg in gfa.segments:
+    seqmap[segmap[seg.name]]=seg.sequence.rstrip()
+
 edgemap=dict()
 for e in gfa.edges:
     fname = e.from_segment.name
@@ -48,20 +39,20 @@ for e in gfa.edges:
     edgemap[fname].append(e)
     edgemap[tname].append(e)
 
-for s in range(len(posts)):
+for s in range(posts.shape[1]):
     pathcount = 0
-    for n in range(len(posts[s])):
-        if visited[s][n] == 1:
+    for n in range(posts.shape[0]):
+        if visited[n,s] == 1:
             continue
-        if posts[s][n] < posterior_threshold:
+        if posts[n,s] < posterior_threshold:
             continue
         # this node exists in the strain and has not yet been visited
         # start a graph traversal in both directions
-        strainpath = "+"+str(n)
-        cur_seq = segs[n].sequence.rstrip()
-        cur_seg = invnamemap[n]
+        strainpath = "+"+str(invmap[n])
+        cur_seq = seqmap[n]
+        cur_seg = invmap[n]
         cur_orient = "+"
-        visited[s][n] = 1
+        visited[n,s] = 1
         for i in range(2):
             while True:
                 # find possible successors of the current segment
@@ -69,36 +60,36 @@ for s in range(len(posts)):
                 if not cur_seg in edgemap:
                     edgemap[cur_seg]=[]
                 for e in edgemap[cur_seg]:
-                    if e.from_segment.name == cur_seg and e.from_orient == cur_orient and posts[s][namemap[e.to_segment.name]] >= posterior_threshold:
-                        successors[e.to_segment.name] = e.to_orient
-                    if e.to_segment.name == cur_seg and e.to_orient != cur_orient and posts[s][namemap[e.from_segment.name]] >= posterior_threshold:
-                        successors[e.from_segment.name] = "-" if e.from_orient == "+" else "+"
+                    if e.from_segment.name == cur_seg and e.from_orient == cur_orient and posts[segmap[e.to_segment.name],s] >= posterior_threshold:
+                        successors[segmap[e.to_segment.name]] = e.to_orient
+                    if e.to_segment.name == cur_seg and e.to_orient != cur_orient and posts[segmap[e.from_segment.name],s] >= posterior_threshold:
+                        successors[segmap[e.from_segment.name]] = "-" if e.from_orient == "+" else "+"
 
                 if len(successors) > 1:
                     print("ambiguous successor for node " + cur_seg + " strain " + str(s))
                 ambig = False
                 for suc in successors:
-                    if visited[s][namemap[suc]] == 1:
+                    if visited[suc,s] == 1:
                         ambig = True    # if the node was already visited, and the path was not extended, then it was likely ambiguous (or a repeat?)
                 if len(successors) != 1 or ambig:
                     break   ## the successor node is either ambiguous or nonexistent
                 for suc in successors:
-                    if visited[s][namemap[suc]] == 1:
-                        print("Error already visited node " + suc + " in strain " + str(s))
+                    if visited[suc,s] == 1:
+                        print("Error already visited node " + invmap[suc] + " in strain " + str(s))
                     cur_orient = successors[suc]
                     cur_seg = suc
-                    visited[s][namemap[suc]] = 1
+                    visited[suc,s] = 1
                     if i == 0:
-                        strainpath += "," + cur_orient + suc
+                        strainpath += "," + cur_orient + invmap[suc]
                     else:
-                        strainpath = cur_orient + suc + "," + strainpath
+                        strainpath = cur_orient + invmap[suc] + "," + strainpath
                     if(cur_orient == "+"):
-                        cur_seq += segs[namemap[suc]].sequence[klen-1:]
+                        cur_seq += seqmap[suc][klen-1:]
                     else:
-                        cur_seq += gfapy.sequence.rc(segs[namemap[suc]].sequence)[klen-1:]
+                        cur_seq += gfapy.sequence.rc(seqmap[suc])[klen-1:]
 
             # now try to extend in the other direction from the original node
-            cur_seg = invnamemap[n]
+            cur_seg = invmap[n]
             cur_orient = "-"
             cur_seq = gfapy.sequence.rc(cur_seq)
 
@@ -108,7 +99,7 @@ for s in range(len(posts)):
 
 i=0
 for s in strainseqs:
-    outseqs = open(sys.argv[4] + ".strain_"+str(i)+".fasta","w")
+    outseqs = open(sys.argv[5] + ".strain_"+str(i)+".fasta","w")
     outseqs.write(s)
     outseqs.close()
     i+=1
