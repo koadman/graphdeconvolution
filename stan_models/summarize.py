@@ -4,7 +4,7 @@ import sys
 import gfapy
 import numpy as np
 if len(sys.argv) != 6:
-    print("Usage: summarize.py <assembly GFA> <stan posterior> <FastA output> <relevance threshold>")
+    print("Usage: summarize.py <assembly GFA> <stan posterior> <posterior summary output> <relevance threshold>")
     sys.exit(-1)
 
 gfa = gfapy.Gfa.from_file(sys.argv[1])
