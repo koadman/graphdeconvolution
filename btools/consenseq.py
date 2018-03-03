@@ -7,17 +7,19 @@ gfa = gfapy.Gfa.from_file(sys.argv[1])
 covfile = sys.argv[2]
 summaryfile = sys.argv[3]
 posterior_threshold = float(sys.argv[4])
-klen = int(gfa.header.kk)
+klen=1
+if hasattr(gfa.header, 'kk') and gfa.header.kk is not None:
+    klen = int(gfa.header.kk)
 
 segmap={}
 invmap={}
-dlabels = np.genfromtxt(covfile, delimiter=',', usecols=0, dtype=str)
+dlabels = np.genfromtxt(summaryfile, usecols=0, skip_header=1, dtype=str)
 for i in range(len(dlabels)):
     segmap[dlabels[i]]=i
     invmap[i]=dlabels[i]
 
 print("Parsing posterior summary")
-posts = np.genfromtxt(summaryfile, delimiter=',', skip_header=1)[:,1:]
+posts = np.genfromtxt(summaryfile, skip_header=1)[:,1:]
 visited = np.zeros(posts.shape)
 print("Parsed "+str(visited.shape[1])+" strain posteriors")
 
@@ -28,16 +30,10 @@ seqmap={}
 for seg in gfa.segments:
     seqmap[segmap[seg.name]]=seg.sequence.rstrip()
 
-edgemap=dict()
+edgemap=[[] for i in range(len(dlabels))]
 for e in gfa.edges:
-    fname = e.from_segment.name
-    tname = e.to_segment.name
-    if not fname in edgemap:
-        edgemap[fname]=[]
-    if not tname in edgemap:
-        edgemap[tname]=[]
-    edgemap[fname].append(e)
-    edgemap[tname].append(e)
+    edgemap[segmap[e.from_segment.name]].append(e)
+    edgemap[segmap[e.to_segment.name]].append(e)
 
 for s in range(posts.shape[1]):
     pathcount = 0
@@ -50,23 +46,23 @@ for s in range(posts.shape[1]):
         # start a graph traversal in both directions
         strainpath = "+"+str(invmap[n])
         cur_seq = seqmap[n]
-        cur_seg = invmap[n]
+        cur_seg = n
         cur_orient = "+"
         visited[n,s] = 1
         for i in range(2):
             while True:
                 # find possible successors of the current segment
                 successors = dict()
-                if not cur_seg in edgemap:
-                    edgemap[cur_seg]=[]
+                if edgemap[cur_seg]==0:
+                    print("isolated node "+invmap[cur_seg])
                 for e in edgemap[cur_seg]:
-                    if e.from_segment.name == cur_seg and e.from_orient == cur_orient and posts[segmap[e.to_segment.name],s] >= posterior_threshold:
+                    if e.from_segment.name == invmap[cur_seg] and e.from_orient == cur_orient and posts[segmap[e.to_segment.name],s] >= posterior_threshold:
                         successors[segmap[e.to_segment.name]] = e.to_orient
-                    if e.to_segment.name == cur_seg and e.to_orient != cur_orient and posts[segmap[e.from_segment.name],s] >= posterior_threshold:
+                    if e.to_segment.name == invmap[cur_seg] and e.to_orient != cur_orient and posts[segmap[e.from_segment.name],s] >= posterior_threshold:
                         successors[segmap[e.from_segment.name]] = "-" if e.from_orient == "+" else "+"
 
                 if len(successors) > 1:
-                    print("ambiguous successor for node " + cur_seg + " strain " + str(s))
+                    print("ambiguous successor for node " + invmap[cur_seg] + " strain " + str(s))
                 ambig = False
                 for suc in successors:
                     if visited[suc,s] == 1:
@@ -89,7 +85,7 @@ for s in range(posts.shape[1]):
                         cur_seq += gfapy.sequence.rc(seqmap[suc])[klen-1:]
 
             # now try to extend in the other direction from the original node
-            cur_seg = invmap[n]
+            cur_seg = n
             cur_orient = "-"
             cur_seq = gfapy.sequence.rc(cur_seq)
 
