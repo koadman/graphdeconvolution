@@ -8,12 +8,14 @@
 params.mingsize=100000
 params.maxgsize=600000
 params.k = 51
-params.maxstrains = 25
+params.maxstrains = 4
 params.relevance_threshold = 0
 params.maxtiplen = 100
 params.asmcores = 8
 params.covk = params.k
 params.output="out"
+
+known_coverages = Channel.from(file(params.coverages))
 
 rfiles1c = Channel.from(file(params.readlist1)).splitText() { it.trim() }
 rfiles2c = Channel.from(file(params.readlist2)).splitText() { it.trim() }
@@ -43,9 +45,7 @@ process unitig {
     """
     ls -1 *.clean.fq > rlist
     ${GDECONHOME}/external/gatb/minia -in rlist -kmer-size ${params.k} -no-bulge-removal -ec-rctc-cutoff 40 -tip-rctc-cutoff 10 -abundance-min 3 -abundance-min-threshold 3
-#    -tip-len-topo-kmult 3 -tip-len-rctc-kmult 3 -tip-rctc-cutoff 15 -bulge-len-kmult 3 -bulge-altpath-covmult 20 -bulge-altpath-kadd 1000 -bulge-len-kadd 52 -ec-rctc-cutoff 30 -ec-len-kmult 1.5
-# -in rlist -kmer-size 51 -tip-rctc-cutoff 10 -bulge-len-kmult 2 -bulge-altpath-covmult 50 -bulge-len-kadd 52 -ec-rctc-cutoff 30 -ec-len-kmult 2
-# -in rlist -kmer-size ${params.k} -tip-rctc-cutoff 10 -bulge-len-kmult 2 -bulge-altpath-covmult 10 -bulge-len-kadd 50
+    rm -f *glue*
     """
 }
 
@@ -83,8 +83,10 @@ import re
 listing = glob.glob('*.counts')
 covout = open('coverage.csv', 'w')
 tigs = {}
-for filename in listing:
-    f = open(filename)
+#for filename in listing:
+#    f = open(filename)
+for i in range(16):
+    f = open("seed#1234-+-alpha#0.1-+-xfold#30.wgs."+str(i+1)+"..counts")
     for line in f:
         if line[0] != '>':
             continue
@@ -102,12 +104,14 @@ for ti in tigs:
 
 // convert the bcalm unitigs to GFA format
 process convert_gfa {
+  publishDir params.output, mode: 'copy', overwrite: true
     input:
     file('unitigs.fa') from unitigs2
 
     output:
     file('unitigs.gfa') into gfa
     file('unitigs.gfa') into gfa2
+    file('unitigs.gfa') into gfa3
 
 """
     ${GDECONHOME}/external/gatb/convertToGFA.py unitigs.fa unitigs.gfa ${params.k}
@@ -115,10 +119,119 @@ process convert_gfa {
 """
 }
 
+// convert the bcalm unitigs to GFA format
+process vgify_asm {
+    publishDir params.output, mode: 'copy', overwrite: true
+    input:
+    file('unitigs.gfa') from gfa3
+
+    output:
+    file('split.vg') into vg_asm
+    file('split.gfa') into vg_gfa
+    file('split.gfa') into vg_gfa2
+
+"""
+    vg view -vF unitigs.gfa > unitigs.vg
+    vg mod -U 10 unitigs.vg > unitigs.norm.vg
+    vg mod -X 1024 unitigs.norm.vg > split.vg
+    vg view -g split.vg > split.gfa
+    vg view -j split.vg > split.json
+    vg index split.vg -x split.vg.xg -g split.vg.gcsa -k 9
+"""
+}
+
+vgrfiles1 = Channel.from(file(params.readlist1)).splitText() { it.trim() }
+vgrfiles2 = Channel.from(file(params.readlist2)).splitText() { it.trim() }
+vgrfiles = vgrfiles1.merge(vgrfiles2) {o, e -> [o, e]}.spread(vg_asm)
+
+process map_reads {
+    input:
+    set reads,reads2,file('split.vg') from vgrfiles
+    output:
+    file('*.counts') into vgcovcounts
+    file('*.links') into vglinkcounts
+
+"""
+    vg index split.vg -x split.vg.xg -g split.vg.gcsa -k 9
+    vg map -k 9 -d split.vg -x split.vg.xg -g split.vg.gcsa -f $reads > aligned1.gam
+    vg map -d split.vg -x split.vg.xg -g split.vg.gcsa -f $reads2 > aligned2.gam
+    vg view -aj aligned1.gam >> aligned.json
+    vg view -aj aligned2.gam >> aligned.json
+    vg view -j split.vg > split.json
+    name=`basename $reads ${params.r1suffix}`
+     ${GDECONHOME}/btools/node_cov.py split.json aligned.json \$name.counts \$name.links
+"""
+}
+
+vgcovfefe = vgcovcounts.collect()
+process vg_extract_cov {
+    input:
+    file('*') from vgcovfefe
+    output:
+    file('coverage.csv') into vgcoverage
+    file('coverage.csv') into vgcoverage2
+
+"""
+#!/usr/bin/env python
+import glob
+import re
+listing = glob.glob('*.counts')
+covout = open('coverage.csv', 'w')
+tigs = {}
+#for filename in listing:
+#    f = open(filename)
+for i in range(16):
+    f = open("seed#1234-+-alpha#0.1-+-xfold#30.wgs."+str(i+1)+"..counts")
+    for line in f:
+        (ti,cov) = line.rstrip().split(',')
+        if not ti in tigs:
+          tigs[ti]=ti
+        tigs[ti] += "," + cov
+for ti in tigs:
+    covout.write(tigs[ti]+"\\n")
+"""
+}
+
+vglinky = vglinkcounts.collect()
+process vg_extract_links {
+    input:
+    file('*') from vglinky
+    output:
+    file('links.csv') into vglinks
+
+"""
+#!/usr/bin/env python
+import glob
+import re
+listing = glob.glob('*.links')
+tigs = {}
+f_i=-1
+#for filename in listing:
+#    f = open(filename)
+for i in range(16):
+    f = open("seed#1234-+-alpha#0.1-+-xfold#30.wgs."+str(i+1)+"..links")
+    f_i+=1
+    for line in f:
+        (t1,t2,links) = line.rstrip().split('\t')
+        if not (t1,t2) in tigs:
+          tigs[(t1,t2)]=['0']*len(listing)
+        tigs[(t1,t2)][f_i] = links
+covout = open('links.csv', 'w')
+for ti in tigs:
+    covout.write(",".join(ti)+','+",".join(tigs[ti])+"\\n")
+"""
+}
+
+
 // run the Bayesian NMF in stan
-process stankmer_nmf {
+process stankmer_nmf_reads {
     input:
     each repid from 1,2,3,4
+    file('unitigs_vg.gfa') from vg_gfa
+    file('read_coverage.csv') from vgcoverage
+    file('links.csv') from vglinks
+    file('known_coverage.tsv') from known_coverages
+
     file('unitigs.gfa') from gfa
     file('coverage.csv') from coverage
     output:
@@ -126,10 +239,10 @@ process stankmer_nmf {
     file("stan.*.out") into stankmerout
 
     """
-    ${GDECONHOME}/btools/gfa2gdecon.py unitigs.gfa coverage.csv ${params.maxstrains} ${params.mingsize} ${params.maxgsize} ${repid}
+    ${GDECONHOME}/btools/gfa2gdecon.py reads unitigs_vg.gfa read_coverage.csv links.csv ${params.maxstrains} ${params.mingsize} ${params.maxgsize} ${repid} known_coverage.tsv
+#    ${GDECONHOME}/btools/gfa2gdecon.py kmercov unitigs.gfa coverage.csv links.csv ${params.maxstrains} ${params.mingsize} ${params.maxgsize} ${repid} known_coverage.tsv
     """
 }
-
 
 // find the run that achieved the highest ELBO
 diags = stankmerdiag.collect()
@@ -181,8 +294,8 @@ process get_ard_weights {
     publishDir params.output, mode: 'copy', overwrite: true
 
     input:
-    file('unitigs.gfa') from gfa
     file('stan.kmer.out') from beststankmer
+    file('coverage.csv') from vgcoverage2
 
     output:
     file('ard_weights.txt') into relweights
@@ -192,7 +305,7 @@ process get_ard_weights {
 
     script:
     """
-     ${GDECONHOME}/stan_models/summarize.py unitigs.gfa stan.kmer.out stan.kmer.summary ${params.maxstrains} 0 | sort -n > ard_weights.txt
+     ${GDECONHOME}/stan_models/summarize.py coverage.csv stan.kmer.out stan.kmer.summary ${params.maxstrains} 0 | sort -n > ard_weights.txt
     """
 }
 
@@ -207,8 +320,10 @@ process summarize {
 
     input:
     file('unitigs.gfa') from gfa2
+    file('unitigs_vg.gfa') from vg_gfa2
     file('stan.kmer.out') from beststankmer2
     file('coverage.csv') from coverage2
+    file('coverage_vg.csv') from vgcoverage2
 
     output:
     file('assembled.*') into strainseqs
@@ -218,8 +333,10 @@ process summarize {
 
     script:
     """
-    ${GDECONHOME}/stan_models/summarize.py unitigs.gfa stan.kmer.out stan.kmer.summary ${params.maxstrains} ${params.relevance_threshold}
-    ${GDECONHOME}/btools/consenseq.py unitigs.gfa coverage.csv stan.kmer.summary 0.5 assembled
+#    ${GDECONHOME}/stan_models/summarize.py coverage.csv stan.kmer.out stan.kmer.summary ${params.maxstrains} ${params.relevance_threshold}
+#    ${GDECONHOME}/btools/consenseq.py unitigs.gfa coverage.csv stan.kmer.summary 0.5 assembled
+    ${GDECONHOME}/stan_models/summarize.py coverage_vg.csv stan.kmer.out stan.kmer.summary ${params.maxstrains} ${params.relevance_threshold}
+    ${GDECONHOME}/btools/consenseq.py unitigs_vg.gfa coverage_vg.csv stan.kmer.summary 0.5 assembled
     """
 }
 
