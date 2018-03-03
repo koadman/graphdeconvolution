@@ -4,16 +4,21 @@ import sys
 import gfapy
 import numpy as np
 if len(sys.argv) != 6:
-    print("Usage: summarize.py <assembly GFA> <stan posterior> <posterior summary output> <relevance threshold>")
+    print("Usage: summarize.py <coverage file> <stan posterior> <posterior summary output> <relevance threshold>")
     sys.exit(-1)
 
-gfa = gfapy.Gfa.from_file(sys.argv[1])
+depthsfile = sys.argv[1]
 postfile = sys.argv[2]
 outfile = open(sys.argv[3], 'w')
 genomes = int(sys.argv[4])
 relevance_threshold = float(sys.argv[5])
 
-unitigs = len(gfa.segments)
+dlabels = np.genfromtxt(depthsfile, delimiter=',', usecols=0, dtype=str)
+invsegmap={}
+for i in range(len(dlabels)):
+    invsegmap[i+1]=dlabels[i]
+
+unitigs = dlabels.shape[0]
 
 pprobs = {}
 relevance = {}
@@ -49,7 +54,7 @@ if relevant==0: outfile.write("\t")
 outfile.write("\n")
 
 for v in range(unitigs):
-    outfile.write(gfa.segment_names[v])
+    outfile.write(invsegmap[v+1])
     for g in range(genomes):
         if relevance[g] > relevance_threshold:
             continue # skip genome if not relevant
