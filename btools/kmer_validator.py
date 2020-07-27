@@ -4,9 +4,9 @@ import sys
 from Bio import SeqIO
 from gfapy.sequence import rc
 
-gfa = gfapy.Gfa.from_file(sys.argv[1])
+#gfa = gfapy.Gfa.from_file(sys.argv[1])
 klen = int(sys.argv[3])
-print_missing=False
+print_missing=True
 
 refmers={}
 graphmers={}
@@ -24,12 +24,21 @@ print("Parsed "+str(ref_kcount)+" ref kmers, of which "+str(int(len(refmers)/2))
 
 gfa_kcount=0
 gfa_seglen=0
-for seg in gfa.segments:
-    gfa_seglen += len(seg.sequence)-(klen-1)
-    for i in range((len(seg.sequence)-(klen-1))):
-        graphmers[seg.sequence[i:i+klen]]=1
-        graphmers[rc(seg.sequence[i:i+klen])]=1
+
+for biorefseq in SeqIO.parse(sys.argv[1], 'fasta'):
+    gfaseq = biorefseq.seq
+    gfa_seglen += len(gfaseq)-(klen-1)
+    for i in range(len(gfaseq)-(klen-1)):
+        graphmers[gfaseq[i:i+klen]]=1
+        graphmers[rc(gfaseq[i:i+klen])]=1
         gfa_kcount+=1
+
+#for seg in gfa.segments:
+#    gfa_seglen += len(seg.sequence)-(klen-1)
+#    for i in range((len(seg.sequence)-(klen-1))):
+#        graphmers[seg.sequence[i:i+klen]]=1
+#        graphmers[rc(seg.sequence[i:i+klen])]=1
+#        gfa_kcount+=1
 print("Parsed "+str(gfa_kcount)+" gfa kmers, of which "+str(int(len(graphmers)/2))+" are unique")
 #gfa_seglen -= (klen-1)*(len(gfa.edges)/2)
 print(str(gfa_seglen)+" kmers based on gfa length minus overlaps")
