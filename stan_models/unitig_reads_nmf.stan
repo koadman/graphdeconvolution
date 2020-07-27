@@ -54,8 +54,10 @@ model {
 		for( s in 1:S ) {
 			real cov = abund[s]'*geno[v]; // ' transposes the vector
 			target += using_reads*lengths[v]*poisson_lpmf( readcounts[v,s] | (cov*(lengths[v]+read_len)) / read_len);
+//			target += using_reads*lengths[v]*normal_lpdf( sqrt(readcounts[v,s]) | sqrt((cov*(lengths[v]+read_len)) / read_len), 0.25);
 			// likelihood of Poisson distributed depths with variance-stabilizing transformation
-			target += (1-using_reads)*lengths[v]*normal_lpdf( sqrt(kmercov[v,s]) | sqrt(cov), 0.25);
+//			target += (1-using_reads)*lengths[v]*normal_lpdf( sqrt(kmercov[v,s]) | sqrt(cov), 0.25);
+			target += (1-using_reads)*lengths[v]*normal_lpdf( sqrt(kmercov[v,s]*(lengths[v]+read_len)) | sqrt(cov*(lengths[v]+read_len)), 0.25);
 		}
 	}
 	// likelihood that a node is due to sequencing error
